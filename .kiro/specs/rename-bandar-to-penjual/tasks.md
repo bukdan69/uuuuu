@@ -1,0 +1,177 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - All References Use "Bandar" (Pre-Fix Verification)
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate "bandar" terminology exists throughout the system
+  - **Scoped PBT Approach**: Scope the property to concrete locations where "bandar" appears: database schema, TypeScript functions, API responses, UI labels, and scripts
+  - Test that "bandar" exists in all expected locations:
+    - Database schema files contain 'bandar' in app_role enum
+    - `isBandar()` function exists in src/lib/auth/checkRole.ts
+    - API responses contain `isBandar` field
+    - Database records exist with role = 'bandar'
+    - Type definitions include 'bandar' in role unions
+    - Scripts reference 'bandar' in role assignments
+  - The test assertions should verify that after the fix, all these locations use "penjual" instead
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found (e.g., "Found 'bandar' in prisma/schema.prisma line 45", "isBandar() exists in checkRole.ts")
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Role Functionality Unchanged
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for users with "bandar" role:
+    - Document exact permissions and access rights
+    - Record authentication flow behavior
+    - Capture database query results
+    - Note API response structure
+  - Write property-based tests capturing observed behavior patterns:
+    - For all users with seller role, verify they can access the same routes
+    - For all users with seller role, verify permission checks return same results
+    - For all users with admin/user roles, verify they are completely unaffected
+    - For all database queries filtering by role, verify they return same users
+    - For all authentication flows, verify sessions remain valid
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
+
+- [x] 3. Fix for renaming "bandar" to "penjual"
+
+  - [x] 3.1 Create database migration
+    - Create migration script to add 'penjual' to app_role enum
+    - Update all user_roles records where role = 'bandar' to role = 'penjual'
+    - Optionally remove 'bandar' from enum (can be done later for safety)
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.content CONTAINS 'bandar' AND codeElement.context = 'role_definition'_
+    - _Expected_Behavior: All database schema and records use 'penjual' instead of 'bandar'_
+    - _Preservation: Existing user data and role assignments must remain intact_
+    - _Requirements: 2.1, 2.5, 3.1, 3.2_
+
+  - [x] 3.2 Update Prisma schema
+    - Update UserRole model comment from `// user, admin, bandar` to `// user, admin, penjual`
+    - Run `npx prisma generate` to regenerate TypeScript types
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.file = 'prisma/schema.prisma'_
+    - _Expected_Behavior: Schema comments and generated types use 'penjual'_
+    - _Preservation: All other Prisma models and relations remain unchanged_
+    - _Requirements: 2.1, 2.2_
+
+  - [x] 3.3 Update database schema SQL files
+    - Update `database-fixes/migration_to_supabase_part1.sql`: Change enum definition to include 'penjual'
+    - Update `database-fixes/schema_complete_fixed.sql`: Change enum definition to include 'penjual'
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context = 'role_definition' AND codeElement.fileType = 'sql'_
+    - _Expected_Behavior: All SQL schema files reference 'penjual' not 'bandar'_
+    - _Preservation: Other enum values and database schema remain unchanged_
+    - _Requirements: 2.1_
+
+  - [x] 3.4 Rename isBandar() function to isPenjual()
+    - In `src/lib/auth/checkRole.ts`:
+      - Rename function from `isBandar()` to `isPenjual()`
+      - Update function call from `checkUserRole(user.id, 'bandar')` to `checkUserRole(user.id, 'penjual')`
+      - Update JSDoc comment from "Check if current authenticated user is bandar" to "penjual"
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context = 'role_check' AND codeElement.content CONTAINS 'isBandar'_
+    - _Expected_Behavior: Function named isPenjual() checks for 'penjual' role_
+    - _Preservation: checkUserRole() function logic and other role check functions remain unchanged_
+    - _Requirements: 2.2, 3.3_
+
+  - [x] 3.5 Update TypeScript type definitions
+    - In `src/lib/supabase.ts`:
+      - Update Args type: Change `_role: 'user' | 'admin' | 'bandar'` to `'penjual'`
+      - Update app_role type: Change `'user' | 'admin' | 'bandar'` to `'penjual'`
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context = 'role_definition' AND codeElement.fileType = 'typescript'_
+    - _Expected_Behavior: All TypeScript role type unions include 'penjual' not 'bandar'_
+    - _Preservation: Other type definitions and Supabase client configuration remain unchanged_
+    - _Requirements: 2.2_
+
+  - [x] 3.6 Update API endpoint
+    - In `src/app/api/auth/check-role/route.ts`:
+      - Rename variable from `isBandar` to `isPenjual`
+      - Update role check from `checkUserRole(user.id, 'bandar')` to `checkUserRole(user.id, 'penjual')`
+      - Update response object key from `isBandar` to `isPenjual`
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context = 'role_check' AND codeElement.file CONTAINS 'api'_
+    - _Expected_Behavior: API responses use isPenjual field name_
+    - _Preservation: API authentication logic and other response fields remain unchanged_
+    - _Requirements: 2.4, 3.4_
+
+  - [x] 3.7 Update administrative scripts
+    - In `scripts/assign-role.ts`:
+      - Update type definition from `'admin' | 'bandar'` to `'admin' | 'penjual'`
+      - Update comment to reference 'penjual' instead of 'bandar'
+      - Update console log condition from `roleToAssign === 'bandar'` to `'penjual'`
+    - In `scripts/remove-role.ts`:
+      - Update type definition from `'admin' | 'bandar'` to `'admin' | 'penjual'`
+      - Update comment to reference 'penjual'
+    - In `scripts/list-all-roles.ts`:
+      - Rename variable from `bandarUsers` to `penjualUsers`
+      - Update filter from `r.role === 'bandar'` to `r.role === 'penjual'`
+      - Update console logs from "Bandar" to "Penjual"
+    - In `scripts/migrate-full.ts` and `scripts/migrate-final.ts`:
+      - Update enum values from `['user', 'admin', 'bandar']` to `['user', 'admin', 'penjual']`
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context = 'role_assignment' AND codeElement.file CONTAINS 'scripts'_
+    - _Expected_Behavior: All scripts use 'penjual' terminology_
+    - _Preservation: Script logic and functionality remain unchanged_
+    - _Requirements: 2.6, 3.5_
+
+  - [x] 3.8 Update seed data and test files
+    - In `prisma/seed.ts`:
+      - Update role assignment from `role: 'bandar'` to `role: 'penjual'`
+    - In `test-check-role-api.ts`:
+      - Rename variables from `isBandar` to `isPenjual`
+      - Update role check from `role: 'bandar'` to `role: 'penjual'`
+      - Update console logs from "BANDAR" to "PENJUAL"
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context IN ['role_assignment', 'role_check'] AND codeElement.file CONTAINS 'test'_
+    - _Expected_Behavior: Seed data and tests use 'penjual' terminology_
+    - _Preservation: Seed data structure and test logic remain unchanged_
+    - _Requirements: 2.5, 2.6_
+
+  - [x] 3.9 Update documentation
+    - In `PERBAIKAN_ADMIN_ACCESS.md`:
+      - Update function references from `isBandar()` to `isPenjual()`
+      - Update example JSON from `"isBandar": false` to `"isPenjual": false`
+    - In `database-fixes/README.md`:
+      - Update table showing enum values from `user, admin, bandar` to `user, admin, penjual`
+    - _Bug_Condition: isBugCondition(codeElement) where codeElement.context = 'role_display' AND codeElement.fileType = 'markdown'_
+    - _Expected_Behavior: Documentation uses 'penjual' terminology consistently_
+    - _Preservation: Documentation structure and other content remain unchanged_
+    - _Requirements: 2.3_
+
+  - [x] 3.10 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - All References Use "Penjual" (Post-Fix Verification)
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify all locations now use "penjual":
+      - Database schema files contain 'penjual' in app_role enum
+      - `isPenjual()` function exists (not `isBandar()`)
+      - API responses contain `isPenjual` field
+      - Database records use role = 'penjual'
+      - Type definitions include 'penjual' in role unions
+      - Scripts reference 'penjual' in role assignments
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
+
+  - [x] 3.11 Verify preservation tests still pass
+    - **Property 2: Preservation** - Role Functionality Unchanged (Post-Fix Verification)
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Verify for users with "penjual" role:
+      - Same permissions and access rights as before
+      - Authentication flows work identically
+      - Database queries return same users
+      - API responses have same structure (only field name changed)
+      - Admin and user roles completely unaffected
+    - Confirm all tests still pass after fix (no regressions)
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Run all unit tests, integration tests, and property-based tests
+  - Verify no TypeScript compilation errors
+  - Verify database migration applied successfully
+  - Verify all role-based functionality works correctly
+  - Ask the user if questions arise

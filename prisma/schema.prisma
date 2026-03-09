@@ -1,0 +1,1074 @@
+// This is your Prisma schema file for Marketplace Core
+// Based on analysis from https://github.com/bukdan/marketplace-core
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// USER MANAGEMENT
+// ============================================
+
+model Profile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  email          String
+  name           String?
+  phone          String?
+  avatarUrl      String?
+  bio            String?
+  city           String?
+  province       String?
+  provinceId     String?
+  regencyId      String?
+  districtId     String?
+  villageId      String?
+  address        String?
+  postalCode     String?
+  website        String?
+  isVerified     Boolean  @default(false)
+  isKycVerified  Boolean  @default(false)
+  totalListings  Int      @default(0)
+  activeListings Int      @default(0)
+  soldCount      Int      @default(0)
+  totalSales     Float    @default(0)
+  averageRating  Float    @default(0)
+  totalReviews   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  userRoles             UserRole[]
+  listings              Listing[]
+  ordersAsBuyer         Order[]             @relation("BuyerOrders")
+  ordersAsSeller        Order[]             @relation("SellerOrders")
+  reviewsAsSeller       SellerReview[]      @relation("SellerReviewSeller")
+  reviewsAsReviewer     SellerReview[]      @relation("SellerReviewReviewer")
+  conversationsAsBuyer  Conversation[]      @relation("BuyerConversations")
+  conversationsAsSeller Conversation[]      @relation("SellerConversations")
+  messages              Message[]
+  notifications         Notification[]
+  wishlist              SavedListing[]
+  wallet                Wallet?
+  credits               UserCredit?
+  kyc                   KycVerification?
+  umkmProfile           UmkmProfile?
+  creditScore           CreditScore?
+  aiCreditScore         AICreditScore?
+  socialMediaConnections SocialMediaConnection[]
+  slikConsent           SlikOjkConsent?
+  supportTickets        SupportTicket[]
+  withdrawals           Withdrawal[]
+  coupons               CouponUse[]
+  bannerEvents          BannerEvent[]
+  creditTransactions    CreditTransaction[]
+
+  @@map("profiles")
+}
+
+model UserRole {
+  id         String   @id @default(cuid())
+  userId     String
+  role       String   @default("user") // user, admin, penjual
+  assignedBy String?
+  createdAt  DateTime @default(now())
+
+  profile Profile @relation(fields: [userId], references: [userId])
+
+  @@map("user_roles")
+}
+
+// ============================================
+// CATEGORIES
+// ============================================
+
+model Category {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  description     String?
+  icon            String? // Lucide icon name
+  color           String? // Hex color code
+  iconUrl         String?
+  imageBannerUrl  String?
+  parentId        String?
+  sortOrder       Int      @default(0)
+  isActive        Boolean  @default(true)
+  isFeatured      Boolean  @default(false)
+  listingCount    Int      @default(0)
+  umkmCount       Int      @default(0)
+  keywords        String?
+  metaTitle       String?
+  metaDescription String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  parent       Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     Category[]    @relation("CategoryHierarchy")
+  listings     Listing[]
+  umkmProfiles UmkmProfile[]
+  products     Product[]
+
+  @@map("categories")
+}
+
+// ============================================
+// LISTINGS & MARKETPLACE
+// ============================================
+
+model Listing {
+  id             String    @id @default(cuid())
+  userId         String
+  categoryId     String?
+  title          String
+  slug           String    @unique
+  description    String?
+  price          Float
+  priceType      String    @default("fixed") // fixed, negotiable, auction
+  listingType    String    @default("sale") // sale, rent, service, wanted
+  condition      String    @default("new") // new, like_new, good, fair
+  status         String    @default("draft") // draft, pending_review, active, sold, expired, rejected
+  city           String?
+  province       String?
+  provinceId     String?
+  regencyId      String?
+  districtId     String?
+  villageId      String?
+  locationLat    Float?
+  locationLng    Float?
+  viewCount      Int       @default(0)
+  clickCount     Int       @default(0)
+  shareCount     Int       @default(0)
+  favoriteCount  Int       @default(0)
+  inquiryCount   Int       @default(0)
+  isFeatured     Boolean   @default(false)
+  featuredUntil  DateTime?
+  keywords       String?
+  attributes     String? // JSON string
+  publishedAt    DateTime?
+  expiresAt      DateTime?
+  soldTo         String?
+  soldAt         DateTime?
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  profile       Profile         @relation(fields: [userId], references: [userId])
+  category      Category?       @relation(fields: [categoryId], references: [id])
+  images        ListingImage[]
+  auction       ListingAuction?
+  boosts        ListingBoost[]
+  savedBy       SavedListing[]
+  reports       ListingReport[]
+  conversations Conversation[]
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+  @@index([categoryId, status])
+  @@map("listings")
+}
+
+model ListingImage {
+  id        String   @id @default(cuid())
+  listingId String
+  imageUrl  String
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+  @@map("listing_images")
+}
+
+model ListingAuction {
+  id            String   @id @default(cuid())
+  listingId     String   @unique
+  startingPrice Float
+  currentPrice  Float
+  buyNowPrice   Float?
+  minIncrement  Float    @default(10000)
+  reservePrice  Float?
+  startsAt      DateTime
+  endsAt        DateTime
+  status        String   @default("active") // active, ended, sold, cancelled
+  winnerId      String?
+  totalBids     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  listing Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  bids    AuctionBid[]
+
+  @@index([status, endsAt])
+  @@map("listing_auctions")
+}
+
+model AuctionBid {
+  id            String   @id @default(cuid())
+  auctionId     String
+  bidderId      String
+  amount        Float
+  isWinning     Boolean  @default(false)
+  isAutoBid     Boolean  @default(false)
+  maxAutoAmount Float?
+  createdAt     DateTime @default(now())
+
+  auction ListingAuction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+
+  @@index([auctionId, createdAt])
+  @@index([bidderId])
+  @@map("auction_bids")
+}
+
+model ListingBoost {
+  id          String   @id @default(cuid())
+  listingId   String
+  boostType   String // highlight, top_search, premium
+  status      String   @default("active") // active, expired, cancelled
+  creditsCost Int
+  startsAt    DateTime
+  endsAt      DateTime
+  createdAt   DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, status])
+  @@map("listing_boosts")
+}
+
+model SavedListing {
+  id        String   @id @default(cuid())
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [userId], references: [userId])
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listingId])
+  @@map("saved_listings")
+}
+
+model ListingReport {
+  id          String    @id @default(cuid())
+  listingId   String
+  reporterId  String
+  reason      String
+  description String?
+  status      String    @default("pending") // pending, reviewed, resolved, dismissed
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  action      String?
+  createdAt   DateTime  @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("listing_reports")
+}
+
+// ============================================
+// ORDERS
+// ============================================
+
+model Order {
+  id           String    @id @default(cuid())
+  listingId    String?
+  buyerId      String
+  sellerId     String
+  status       String    @default("pending") // pending, confirmed, processing, shipped, delivered, completed, cancelled
+  totalAmount  Float
+  notes        String?
+  cancelledAt  DateTime?
+  cancelledBy  String?
+  cancelReason String?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  buyer  Profile       @relation("BuyerOrders", fields: [buyerId], references: [userId])
+  seller Profile       @relation("SellerOrders", fields: [sellerId], references: [userId])
+  review SellerReview?
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@map("orders")
+}
+
+model SellerReview {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  sellerId   String
+  reviewerId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  order    Order   @relation(fields: [orderId], references: [id])
+  seller   Profile @relation("SellerReviewSeller", fields: [sellerId], references: [userId])
+  reviewer Profile @relation("SellerReviewReviewer", fields: [reviewerId], references: [userId])
+
+  @@index([sellerId])
+  @@map("seller_reviews")
+}
+
+// ============================================
+// WALLET & TRANSACTIONS
+// ============================================
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Float    @default(0)
+  status    String   @default("active") // active, frozen, closed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile      Profile       @relation(fields: [userId], references: [userId])
+  transactions Transaction[]
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  walletId      String
+  type          String // topup, withdrawal, payment, refund, commission, bonus
+  amount        Float
+  balanceBefore Float
+  balanceAfter  Float
+  description   String?
+  referenceType String?
+  referenceId   String?
+  status        String   @default("completed")
+  createdAt     DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@map("transactions")
+}
+
+model Withdrawal {
+  id              String    @id @default(cuid())
+  userId          String
+  amount          Float
+  bankName        String
+  bankAccount     String
+  bankAccountName String
+  status          String    @default("pending") // pending, processing, approved, rejected, paid
+  processedBy     String?
+  processedAt     DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  profile Profile @relation(fields: [userId], references: [userId])
+
+  @@index([userId, status])
+  @@map("withdrawals")
+}
+
+// ============================================
+// CREDITS SYSTEM
+// ============================================
+
+model UserCredit {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  balance        Int      @default(0)
+  totalPurchased Int      @default(0)
+  totalUsed      Int      @default(0)
+  totalBonus     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  profile      Profile             @relation(fields: [userId], references: [userId])
+  transactions CreditTransaction[]
+
+  @@map("user_credits")
+}
+
+model CreditTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  type          String // purchase, use, bonus, refund, expire
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  description   String?
+  referenceType String?
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  profile    Profile     @relation(fields: [userId], references: [userId], map: "credit_transactions_profile_fkey")
+  userCredit UserCredit? @relation(fields: [userId], references: [userId], map: "credit_transactions_user_credit_fkey")
+
+  @@index([userId, createdAt])
+  @@map("credit_transactions")
+}
+
+model CreditPackage {
+  id           String   @id @default(cuid())
+  name         String
+  credits      Int
+  price        Float
+  bonusCredits Int      @default(0)
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("credit_packages")
+}
+
+model CreditTopupRequest {
+  id            String    @id @default(cuid())
+  userId        String
+  amount        Float
+  creditsAmount Int
+  bonusCredits  Int       @default(0)
+  paymentProof  String?
+  status        String    @default("pending") // pending, approved, rejected
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@map("credit_topup_requests")
+}
+
+// ============================================
+// UMKM (Business Profiles)
+// ============================================
+
+model UmkmProfile {
+  id            String    @id @default(cuid())
+  ownerId       String    @unique
+  umkmName      String
+  brandName     String?
+  slug          String    @unique
+  description   String?
+  tagline       String?
+  logoUrl       String?
+  bannerUrl     String?
+  category      String?
+  subcategory   String?
+  categoryId    String?
+  businessScale String    @default("micro") // micro, small, medium, large
+  businessType  String?
+  npwp          String?
+  nib           String?
+  provinceId    String?
+  regencyId     String?
+  address       String?
+  city          String?
+  postalCode    String?
+  phone         String?
+  email         String?
+  website       String?
+  instagram     String?
+  facebook      String?
+  tiktok        String?
+  whatsapp      String?
+  isVerified    Boolean   @default(false)
+  verifiedBy    String?
+  verifiedAt    DateTime?
+  status        String    @default("pending") // pending, active, suspended, closed
+  viewCount     Int       @default(0)
+  totalProducts Int       @default(0)
+  totalOrders   Int       @default(0)
+  totalRevenue  Float     @default(0)
+  averageRating Float     @default(0)
+  totalReviews  Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  owner       Profile      @relation(fields: [ownerId], references: [userId])
+  categoryRel Category?    @relation(fields: [categoryId], references: [id])
+  products    Product[]
+  reviews     UmkmReview[]
+
+  @@index([status])
+  @@map("umkm_profiles")
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  umkmId          String
+  categoryId      String?
+  name            String
+  slug            String   @unique
+  description     String?
+  price           Float?
+  stock           Int      @default(0)
+  sku             String?
+  weight          Float?
+  length          Float?
+  width           Float?
+  height          Float?
+  status          String   @default("active") // active, inactive
+  primaryImageUrl String?
+  viewCount       Int      @default(0)
+  totalSold       Int      @default(0)
+  averageRating   Float    @default(0)
+  totalReviews    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  umkm     UmkmProfile     @relation(fields: [umkmId], references: [id], onDelete: Cascade)
+  category Category?       @relation(fields: [categoryId], references: [id])
+  images   ProductImage[]
+  reviews  ProductReview[]
+
+  @@index([umkmId, status])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  imageUrl  String
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
+model ProductReview {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_reviews")
+}
+
+model UmkmReview {
+  id         String   @id @default(cuid())
+  umkmId     String
+  reviewerId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  umkm UmkmProfile @relation(fields: [umkmId], references: [id], onDelete: Cascade)
+
+  @@index([umkmId])
+  @@map("umkm_reviews")
+}
+
+// ============================================
+// COMMUNICATION
+// ============================================
+
+model Conversation {
+  id            String    @id @default(cuid())
+  listingId     String?
+  buyerId       String
+  sellerId      String
+  lastMessage   String?
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  listing  Listing?  @relation(fields: [listingId], references: [id])
+  buyer    Profile   @relation("BuyerConversations", fields: [buyerId], references: [userId])
+  seller   Profile   @relation("SellerConversations", fields: [sellerId], references: [userId])
+  messages Message[]
+
+  @@unique([listingId, buyerId, sellerId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       Profile      @relation(fields: [senderId], references: [userId])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String // info, success, warning, error, order, payment, message
+  title     String
+  message   String
+  data      String? // JSON string
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  profile Profile @relation(fields: [userId], references: [userId])
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ============================================
+// SUPPORT TICKETS
+// ============================================
+
+model SupportTicket {
+  id          String    @id @default(cuid())
+  userId      String
+  subject     String
+  category    String?
+  priority    String    @default("normal") // low, normal, high, urgent
+  status      String    @default("open") // open, in_progress, waiting_customer, resolved, closed
+  assignedTo  String?
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  lastReplyAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  profile Profile       @relation(fields: [userId], references: [userId])
+  replies TicketReply[]
+
+  @@index([userId, status])
+  @@index([status, priority])
+  @@map("support_tickets")
+}
+
+model TicketReply {
+  id        String   @id @default(cuid())
+  ticketId  String
+  userId    String
+  message   String
+  isStaff   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_replies")
+}
+
+// ============================================
+// KYC VERIFICATION
+// ============================================
+
+model KycVerification {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  ktpNumber       String?
+  npwpNumber      String?
+  status          String    @default("not_submitted") // not_submitted, draft, pending, under_review, approved, rejected
+  submittedAt     DateTime?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  profile   Profile       @relation(fields: [userId], references: [userId])
+  documents KycDocument[]
+
+  @@map("kyc_verifications")
+}
+
+model KycDocument {
+  id                String   @id @default(cuid())
+  kycVerificationId String
+  documentType      String // ktp, npwp, selfie, etc
+  documentUrl       String
+  status            String   @default("pending")
+  createdAt         DateTime @default(now())
+
+  kycVerification KycVerification @relation(fields: [kycVerificationId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_documents")
+}
+
+// ============================================
+// BANNER ADS
+// ============================================
+
+model Banner {
+  id           String    @id @default(cuid())
+  userId       String
+  title        String
+  imageUrl     String
+  targetUrl    String
+  position     String    @default("home") // home, header, footer, inline, sidebar
+  pricingModel String    @default("cpm") // cpm, cpc
+  costPerClick Float?
+  costPerMille Float?
+  budgetTotal  Float     @default(0)
+  budgetSpent  Float     @default(0)
+  impressions  Int       @default(0)
+  clicks       Int       @default(0)
+  status       String    @default("pending") // pending, active, paused, expired
+  startsAt     DateTime
+  endsAt       DateTime?
+  approvedBy   String?
+  approvedAt   DateTime?
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  events BannerEvent[]
+
+  @@index([position, status])
+  @@map("banners")
+}
+
+model BannerEvent {
+  id         String   @id @default(cuid())
+  bannerId   String
+  eventType  String // impression, click
+  userId     String?
+  costAmount Float?
+  createdAt  DateTime @default(now())
+
+  banner  Banner   @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+  profile Profile? @relation(fields: [userId], references: [userId])
+
+  @@index([bannerId])
+  @@index([eventType, createdAt])
+  @@map("banner_events")
+}
+
+// ============================================
+// SPONSORS
+// ============================================
+
+model Sponsor {
+  id        String   @id @default(cuid())
+  name      String
+  logoUrl   String
+  website   String
+  category  String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("sponsors")
+}
+
+model CarouselConfig {
+  id           String   @id @default(cuid())
+  scrollSpeed  Int      @default(20)
+  pauseOnHover Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+
+  @@map("carousel_configs")
+}
+
+// ============================================
+// COUPONS
+// ============================================
+
+model Coupon {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  creditsAmount Int
+  maxUses       Int
+  usedCount     Int       @default(0)
+  minPurchase   Float?
+  expiresAt     DateTime?
+  isActive      Boolean   @default(true)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+
+  uses CouponUse[]
+
+  @@map("coupons")
+}
+
+model CouponUse {
+  id       String   @id @default(cuid())
+  couponId String
+  userId   String
+  usedAt   DateTime @default(now())
+
+  coupon  Coupon  @relation(fields: [couponId], references: [id])
+  profile Profile @relation(fields: [userId], references: [userId])
+
+  @@unique([couponId, userId])
+  @@map("coupon_uses")
+}
+
+// ============================================
+// SYSTEM
+// ============================================
+
+// ============================================
+// WILAYAH INDONESIA (Indonesian Regions)
+// ============================================
+
+model Province {
+  id        String   @id // Kode provinsi (2 digit)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  regencies Regency[]
+
+  @@map("provinces")
+}
+
+model Regency {
+  id         String   @id // Kode kabupaten/kota (4 digit)
+  provinceId String
+  name       String
+  type       String // "Kabupaten" atau "Kota"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  province  Province   @relation(fields: [provinceId], references: [id])
+  districts District[]
+
+  @@index([provinceId])
+  @@map("regencies")
+}
+
+model District {
+  id        String   @id // Kode kecamatan (6 digit)
+  regencyId String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  regency  Regency   @relation(fields: [regencyId], references: [id])
+  villages Village[]
+
+  @@index([regencyId])
+  @@map("districts")
+}
+
+model Village {
+  id         String   @id // Kode desa/kelurahan (10 digit)
+  districtId String
+  name       String
+  type       String // "Desa" atau "Kelurahan"
+  postalCode String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  district District @relation(fields: [districtId], references: [id])
+
+  @@index([districtId])
+  @@map("villages")
+}
+
+// ============================================
+// SYSTEM
+// ============================================
+
+model PlatformSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@map("platform_settings")
+}
+
+model AdminLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String
+  targetType String?
+  targetId   String?
+  details    String? // JSON string
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([action])
+  @@map("admin_logs")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  details    String? // JSON string
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  userId    String?
+  name      String
+  content   String
+  rating    Int
+  avatarUrl String?
+  company   String?
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("testimonials")
+}
+
+// ============================================
+// BOOST TYPES (Seeded Data)
+// ============================================
+
+model BoostType {
+  id            String   @id @default(cuid())
+  type          String   @unique // highlight, top_search, premium
+  name          String
+  description   String?
+  creditsPerDay Int
+  multiplier    Float    @default(1.0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@map("boost_types")
+}
+
+// ============================================
+// ACTIVITY LOG
+// ============================================
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  userEmail   String
+  action      String // create_listing, place_order, approve_kyc, withdrawal, etc
+  description String
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json? // Additional data as JSON
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ============================================
+// CREDIT SCORING FOR KUR LOANS
+// ============================================
+
+model CreditScore {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  totalScore              Int      @default(0) // 0-100
+  businessDurationScore   Int      @default(0) // 0-15
+  revenueScore            Int      @default(0) // 0-20
+  transactionScore        Int      @default(0) // 0-20
+  ratingScore             Int      @default(0) // 0-15
+  kycScore                Int      @default(0) // 0-10
+  assetScore              Int      @default(0) // 0-10
+  paymentHistoryScore     Int      @default(0) // 0-10
+  eligibilityStatus       String   @default("not_eligible") // not_eligible, review_needed, eligible, highly_eligible
+  recommendedLoanAmount   Float    @default(0)
+  riskLevel               String   @default("high") // high, medium, low
+  lastCalculatedAt        DateTime @default(now())
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([eligibilityStatus])
+  @@index([totalScore])
+  @@map("credit_scores")
+}
+
+model AICreditScore {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  totalScore            Int      @default(0)
+  confidence            Float    @default(0)
+  slikScore             Int      @default(0)
+  socialMediaScore      Int      @default(0)
+  platformScore         Int      @default(0)
+  behavioralScore       Int      @default(0)
+  verificationScore     Int      @default(0)
+  riskLevel             String   @default("high")
+  riskFactors           Json?
+  recommendations       Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([totalScore])
+  @@map("ai_credit_scores")
+}
+
+model SocialMediaConnection {
+  id            String   @id @default(cuid())
+  userId        String
+  platform      String   // facebook, instagram, linkedin
+  platformId    String
+  accessToken   String
+  refreshToken  String?
+  expiresAt     DateTime?
+  isActive      Boolean  @default(true)
+  lastSynced    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("social_media_connections")
+}
+
+model SlikOjkConsent {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  nik         String
+  consentGiven Boolean @default(false)
+  consentDate DateTime?
+  lastChecked DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("slik_ojk_consents")
+}
