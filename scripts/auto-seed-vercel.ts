@@ -419,7 +419,10 @@ async function seedMinimalData() {
   for (const sponsor of sponsors) {
     await prisma.sponsor.create({
       data: {
-        ...sponsor,
+        name: sponsor.name,
+        logoUrl: sponsor.logoUrl,
+        website: sponsor.websiteUrl,
+        sortOrder: sponsor.sortOrder,
         isActive: true,
       },
     });
