@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { existsSync } from 'fs';
 
 export async function POST(request: Request) {
   try {
@@ -42,35 +39,41 @@ export async function POST(request: Request) {
       const randomString = Math.random().toString(36).substring(2, 15);
       const extension = singleFile.name.split('.').pop();
       
-      let uploadsDir: string;
+      let bucketName: string;
       let filename: string;
-      let urlPath: string;
 
-      // Determine upload directory based on type
+      // Determine bucket based on type
       if (uploadType === 'listing') {
         filename = `listing-${user.id}-${timestamp}-${randomString}.${extension}`;
-        uploadsDir = join(process.cwd(), 'public', 'uploads', 'listings');
-        urlPath = `/uploads/listings/${filename}`;
+        bucketName = 'images';
       } else {
         // Default to banner
         filename = `banner-${timestamp}-${randomString}.${extension}`;
-        uploadsDir = join(process.cwd(), 'public', 'uploads', 'banners');
-        urlPath = `/uploads/banners/${filename}`;
+        bucketName = 'images';
       }
 
-      // Create uploads directory if it doesn't exist
-      if (!existsSync(uploadsDir)) {
-        await mkdir(uploadsDir, { recursive: true });
-      }
-
-      // Save file
+      // Upload to Supabase Storage
       const bytes = await singleFile.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      const filepath = join(uploadsDir, filename);
-      await writeFile(filepath, buffer);
 
-      // Return public URL
-      return NextResponse.json({ success: true, url: urlPath });
+      const { data, error } = await supabase.storage
+        .from(bucketName)
+        .upload(`uploads/${uploadType || 'banner'}/${filename}`, buffer, {
+          contentType: singleFile.type,
+          upsert: false,
+        });
+
+      if (error) {
+        console.error('Supabase upload error:', error);
+        return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+      }
+
+      // Get public URL
+      const { data: publicData } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(`uploads/${uploadType || 'banner'}/${filename}`);
+
+      return NextResponse.json({ success: true, url: publicData.publicUrl });
     }
 
     // Handle KYC multiple files upload
@@ -91,12 +94,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Selfie file size must be less than 5MB' }, { status: 400 });
       }
 
-      // Create uploads directory for KYC
-      const uploadsDir = join(process.cwd(), 'public', 'uploads', 'kyc');
-      if (!existsSync(uploadsDir)) {
-        await mkdir(uploadsDir, { recursive: true });
-      }
-
       // Upload KTP image
       const ktpTimestamp = Date.now();
       const ktpRandomString = Math.random().toString(36).substring(2, 15);
@@ -105,8 +102,18 @@ export async function POST(request: Request) {
       
       const ktpBytes = await ktpImage.arrayBuffer();
       const ktpBuffer = Buffer.from(ktpBytes);
-      const ktpFilepath = join(uploadsDir, ktpFilename);
-      await writeFile(ktpFilepath, ktpBuffer);
+
+      const { data: ktpData, error: ktpError } = await supabase.storage
+        .from('images')
+        .upload(`uploads/kyc/${ktpFilename}`, ktpBuffer, {
+          contentType: ktpImage.type,
+          upsert: false,
+        });
+
+      if (ktpError) {
+        console.error('KTP upload error:', ktpError);
+        return NextResponse.json({ error: 'KTP upload failed' }, { status: 500 });
+      }
 
       // Upload Selfie image
       const selfieTimestamp = Date.now();
@@ -116,14 +123,32 @@ export async function POST(request: Request) {
       
       const selfieBytes = await selfieImage.arrayBuffer();
       const selfieBuffer = Buffer.from(selfieBytes);
-      const selfieFilepath = join(uploadsDir, selfieFilename);
-      await writeFile(selfieFilepath, selfieBuffer);
 
-      // Return public URLs
-      const ktp_image_url = `/uploads/kyc/${ktpFilename}`;
-      const selfie_image_url = `/uploads/kyc/${selfieFilename}`;
+      const { data: selfieData, error: selfieError } = await supabase.storage
+        .from('images')
+        .upload(`uploads/kyc/${selfieFilename}`, selfieBuffer, {
+          contentType: selfieImage.type,
+          upsert: false,
+        });
 
-      return NextResponse.json({ ktp_image_url, selfie_image_url });
+      if (selfieError) {
+        console.error('Selfie upload error:', selfieError);
+        return NextResponse.json({ error: 'Selfie upload failed' }, { status: 500 });
+      }
+
+      // Get public URLs
+      const { data: ktpPublicData } = supabase.storage
+        .from('images')
+        .getPublicUrl(`uploads/kyc/${ktpFilename}`);
+
+      const { data: selfiePublicData } = supabase.storage
+        .from('images')
+        .getPublicUrl(`uploads/kyc/${selfieFilename}`);
+
+      return NextResponse.json({
+        ktp_image_url: ktpPublicData.publicUrl,
+        selfie_image_url: selfiePublicData.publicUrl,
+      });
     }
 
     return NextResponse.json({ error: 'No file provided' }, { status: 400 });
