@@ -195,8 +195,14 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Error fetching landing data:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error details:', errorMessage);
     return NextResponse.json(
-      { error: 'Failed to fetch landing data' },
+      { 
+        error: 'Failed to fetch landing data',
+        details: errorMessage,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }
